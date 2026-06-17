@@ -1,0 +1,4 @@
+{"timestamp": "2024-06-15 14:00:00", "predicted_load_mw": 52000.0, "actual_load_mw": 51500.0, "error_mw": 500.0, "error_pct": 0.9708737864077669, "logged_at": "2026-06-17T20:25:23.786317", "notes": null}
+{"timestamp": "2024-06-15 15:00:00", "predicted_load_mw": 53000.0, "actual_load_mw": 52000.0, "error_mw": 1000.0, "error_pct": 1.9230769230769231, "logged_at": "2026-06-17T20:25:23.793484", "notes": "holiday effect"}
+{"timestamp": "2024-06-15 14:00:00", "predicted_load_mw": 52000.0, "actual_load_mw": 51500.0, "error_mw": 500.0, "error_pct": 0.9708737864077669, "logged_at": "2026-06-17T20:37:03.803444", "notes": null}
+{"timestamp": "2024-06-15 15:00:00", "predicted_load_mw": 53000.0, "actual_load_mw": 52000.0, "error_mw": 1000.0, "error_pct": 1.9230769230769231, "logged_at": "2026-06-17T20:37:03.820042", "notes": "holiday effect"}

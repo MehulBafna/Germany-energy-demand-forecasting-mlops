@@ -111,7 +111,7 @@ def plot_error_distribution(df_eval: pd.DataFrame, save_path: Path) -> Path:
     df_eval["day_name"] = pd.to_datetime(df_eval["timestamp"]).dt.day_name()
     day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     day_errors = [df_eval[df_eval["day_name"] == d]["error"].values for d in day_order]
-    bp = ax2.boxplot(day_errors, labels=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    bp = ax2.boxplot(day_errors, tick_labels=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
                      patch_artist=True)
     for patch in bp["boxes"]:
         patch.set_facecolor("#667eea")
@@ -155,8 +155,8 @@ def plot_performance_by_hour(df_eval: pd.DataFrame, save_path: Path) -> Path:
     ax.legend()
     ax.grid(True, alpha=0.3, axis="y")
     # Red bars = worse than average, green = better
-    ax.text(0.02, 0.95, "🔴 Worse than average  🟢 Better than average",
-            transform=ax.transAxes, fontsize=9, va="top")
+    ax.text(0.02, 0.95, "Red = worse than average  |  Green = better than average",
+            transform=ax.transAxes, fontsize=9, va="top", color="dimgray")
 
     plt.tight_layout()
     plt.savefig(save_path, dpi=120, bbox_inches="tight")
@@ -180,16 +180,20 @@ def plot_performance_by_month(df_eval: pd.DataFrame, save_path: Path) -> Path:
                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
     fig, ax = plt.subplots(figsize=(12, 5))
-    ax.bar(range(1, len(month_mae) + 1),
-           [month_mae.get(m, 0) for m in range(1, 13)],
-           color="#667eea", edgecolor="white", alpha=0.85)
+    available_months = sorted(month_mae.index.tolist())
+    available_names = [month_names[m-1] for m in available_months]
+    available_values = [month_mae[m] for m in available_months]
+
+    ax.bar(range(1, len(available_months) + 1),
+       available_values,
+       color="#667eea", edgecolor="white", alpha=0.85)
     ax.axhline(month_mae.mean(), color="red", linewidth=2,
-               linestyle="--", label=f"Average: {month_mae.mean():,.0f} MW")
+           linestyle="--", label=f"Average: {month_mae.mean():,.0f} MW")
     ax.set_title("MAE by Month (Seasonal Analysis)", fontsize=14, fontweight="bold")
     ax.set_xlabel("Month")
     ax.set_ylabel("Mean Absolute Error (MW)")
-    ax.set_xticks(range(1, 13))
-    ax.set_xticklabels(month_names)
+    ax.set_xticks(range(1, len(available_months) + 1))
+    ax.set_xticklabels(available_names)
     ax.legend()
     ax.grid(True, alpha=0.3, axis="y")
 
@@ -227,7 +231,7 @@ def evaluate(run_id: str = None) -> dict:
     split_point = df["timestamp"].max() - pd.Timedelta(days=test_days)
     test_df     = df[df["timestamp"] > split_point].copy()
 
-    X_test = test_df[feature_cols].values
+    X_test = test_df[feature_cols]
     y_test = test_df[target].values
     y_pred = model.predict(X_test)
 

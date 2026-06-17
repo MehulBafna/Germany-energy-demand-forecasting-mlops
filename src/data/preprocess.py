@@ -194,12 +194,23 @@ class EnergyFeatureEngineer:
 
     def save(self, path: Path = Path("models/feature_engineer.pkl")):
         path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self, path)
+        # Save as dict to avoid pickle class path issues
+        state = {
+            "feature_columns": self.feature_columns,
+            "is_fitted": self.is_fitted,
+            "scaler": self.scaler,
+        }
+        joblib.dump(state, path)
         logger.info(f"Feature engineer saved to {path}")
 
     @staticmethod
     def load(path: Path = Path("models/feature_engineer.pkl")) -> "EnergyFeatureEngineer":
-        engineer = joblib.load(path)
+        state = joblib.load(path)
+        engineer = EnergyFeatureEngineer()
+        engineer.feature_columns = state["feature_columns"]
+        engineer.is_fitted = state["is_fitted"]
+        engineer.scaler = state["scaler"]
+        engineer.german_holidays = holidays.Germany()
         logger.info(f"Feature engineer loaded from {path}")
         return engineer
 

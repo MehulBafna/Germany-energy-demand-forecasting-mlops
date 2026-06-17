@@ -75,14 +75,14 @@ def time_series_cv(df: pd.DataFrame, feature_cols: list, target: str) -> dict:
     n_splits = TRAIN_PARAMS["cv_folds"]
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
-    X = df[feature_cols].values
+    X = df[feature_cols]
     y = df[target].values
 
     fold_metrics = []
     logger.info(f"Running {n_splits}-fold time series cross validation...")
 
     for fold, (train_idx, val_idx) in enumerate(tscv.split(X), 1):
-        X_train, X_val = X[train_idx], X[val_idx]
+        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y[train_idx], y[val_idx]
 
         model = lgb.LGBMRegressor(**MODEL_PARAMS["params"])
@@ -131,9 +131,9 @@ def train(df: pd.DataFrame = None):
     train_df = df[df["timestamp"] <= split_point]
     test_df  = df[df["timestamp"] >  split_point]
 
-    X_train = train_df[feature_cols].values
+    X_train = train_df[feature_cols]
     y_train = train_df[target].values
-    X_test  = test_df[feature_cols].values
+    X_test  = test_df[feature_cols]
     y_test  = test_df[target].values
 
     logger.info(f"Train: {len(train_df):,} rows | Test: {len(test_df):,} rows")
@@ -200,7 +200,7 @@ def train(df: pd.DataFrame = None):
         model_path = Path(TRAIN_PARAMS["model_output_path"])
         model_path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(model, model_path)
-        mlflow.lightgbm.log_model(model, "model")
+        mlflow.lightgbm.log_model(model, name="model")
 
         # Save feature column order — API needs this to align inputs
         feat_path = Path("models/feature_columns.json")
@@ -239,26 +239,26 @@ def _maybe_promote_to_production(run_id: str, new_mae: float) -> bool:
     Compare new model against current production champion.
     Only promote if new model is meaningfully better.
 
-    This prevents:
-      - Accidentally deploying a worse model
-      - Noisy retraining from degrading production performance
+    Uses MLflow aliases ("champion"/"challenger") instead of deprecated stages.
     """
-    client = mlflow.tracking.MlflowClient()
     model_name = MLFLOW_PARAMS["registered_model_name"]
     threshold  = MLFLOW_PARAMS["promote_if_mae_improvement"]
 
     try:
-        # Get current production model MAE
-        prod_versions = client.get_latest_versions(model_name, stages=["Production"])
-        if not prod_versions:
-            # No production model yet — promote automatically
-            logger.info("No production model exists — promoting new model automatically")
-            _register_and_promote(client, run_id, model_name, stage="Production")
-            return True
+        client = mlflow.tracking.MlflowClient()
+        try:
+            champion_mv  = client.get_model_version_by_alias(model_name, "champion")
+            prod_run     = client.get_run(champion_mv.run_id)
+            prod_mae     = prod_run.data.metrics.get("test_mae", float("inf"))
+            has_champion = True
+        except Exception:
+            has_champion = False
 
-        prod_run_id = prod_versions[0].run_id
-        prod_run    = client.get_run(prod_run_id)
-        prod_mae    = prod_run.data.metrics.get("test_mae", float("inf"))
+        if not has_champion:
+            logger.info("No champion model exists — promoting new model automatically")
+            mv = _register_model(client, run_id, model_name)
+            client.set_registered_model_alias(model_name, "champion", mv.version)
+            return True
 
         improvement = (prod_mae - new_mae) / prod_mae
 
@@ -266,19 +266,15 @@ def _maybe_promote_to_production(run_id: str, new_mae: float) -> bool:
                     f"Challenger MAE: {new_mae:,.0f} MW | "
                     f"Improvement: {improvement:.2%}")
 
+        mv = _register_model(client, run_id, model_name)
         if improvement >= threshold:
-            logger.info(f"Challenger wins! Promoting to production...")
-            _register_and_promote(client, run_id, model_name, stage="Production")
-            # Archive old champion
-            client.transition_model_version_stage(
-                name=model_name,
-                version=prod_versions[0].version,
-                stage="Archived"
-            )
+            logger.info("Challenger wins! Promoting to champion...")
+            client.set_registered_model_alias(model_name, "champion", mv.version)
+            client.set_registered_model_alias(model_name, "challenger", champion_mv.version)
             return True
         else:
             logger.info(f"Challenger did not beat champion by {threshold:.0%} — keeping champion")
-            _register_and_promote(client, run_id, model_name, stage="Staging")
+            client.set_registered_model_alias(model_name, "challenger", mv.version)
             return False
 
     except Exception as e:
@@ -286,16 +282,12 @@ def _maybe_promote_to_production(run_id: str, new_mae: float) -> bool:
         return False
 
 
-def _register_and_promote(client, run_id: str, model_name: str, stage: str):
-    """Register model version and transition to given stage."""
+def _register_model(client, run_id: str, model_name: str):
+    """Register a new model version and return it."""
     model_uri = f"runs:/{run_id}/model"
     mv = mlflow.register_model(model_uri, model_name)
-    client.transition_model_version_stage(
-        name=model_name,
-        version=mv.version,
-        stage=stage
-    )
-    logger.info(f"Model v{mv.version} → {stage}")
+    logger.info(f"Registered model v{mv.version}")
+    return mv
 
 
 if __name__ == "__main__":

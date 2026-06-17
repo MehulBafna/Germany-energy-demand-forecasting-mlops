@@ -21,6 +21,7 @@ import joblib
 import yaml
 import numpy as np
 import pandas as pd
+import holidays
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -34,9 +35,9 @@ logger = logging.getLogger(__name__)
 with open("params.yaml") as f:
     params = yaml.safe_load(f)
 
-API_PARAMS    = params["api"]
-FEAT_PARAMS   = params["features"]
-MONITOR_PARAMS= params["monitoring"]
+API_PARAMS     = params["api"]
+FEAT_PARAMS    = params["features"]
+MONITOR_PARAMS = params["monitoring"]
 
 # ── FastAPI App ────────────────────────────────────────────────────────
 
@@ -52,7 +53,6 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Allow cross-origin requests (needed for dashboards/frontends)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -78,8 +78,9 @@ class ModelStore:
     def load(cls):
         """Load model and feature engineer from disk."""
         try:
+            from src.data.preprocess import EnergyFeatureEngineer
             cls.model = joblib.load(cls.model_path)
-            cls.feature_engineer = joblib.load(Path("models/feature_engineer.pkl"))
+            cls.feature_engineer = EnergyFeatureEngineer.load(Path("models/feature_engineer.pkl"))
             with open("models/feature_columns.json") as f:
                 cls.feature_columns = json.load(f)
             cls.loaded_at = datetime.now().isoformat()
@@ -87,7 +88,7 @@ class ModelStore:
             logger.info(f"Feature columns: {len(cls.feature_columns)}")
         except FileNotFoundError as e:
             logger.error(f"Model files not found: {e}")
-            logger.error("Run: python -m src.rag.embedder --init first")
+            logger.error("Run: python -m pipelines.train_pipeline first")
 
     @classmethod
     def is_ready(cls) -> bool:
@@ -102,13 +103,9 @@ async def startup_event():
     logger.info("API ready!")
 
 
-# ── Pydantic Models (Request / Response schemas) ───────────────────────
+# ── Pydantic Models ────────────────────────────────────────────────────
 
 class PredictRequest(BaseModel):
-    """
-    Input schema for /predict endpoint.
-    Pydantic validates types automatically — wrong types = clear error.
-    """
     start_timestamp: str = Field(
         default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:00:00"),
         description="Start time for forecast. Format: YYYY-MM-DD HH:00:00",
@@ -124,7 +121,7 @@ class PredictRequest(BaseModel):
 class HourlyPrediction(BaseModel):
     timestamp: str
     predicted_load_mw: float
-    lower_bound_mw: float   # Uncertainty estimate
+    lower_bound_mw: float
     upper_bound_mw: float
 
 class PredictResponse(BaseModel):
@@ -136,10 +133,6 @@ class PredictResponse(BaseModel):
     generated_at: str
 
 class FeedbackRequest(BaseModel):
-    """
-    Submit actual observed values vs what was predicted.
-    Used to track real-world model accuracy over time.
-    """
     timestamp: str
     predicted_load_mw: float
     actual_load_mw: float
@@ -156,14 +149,7 @@ class HealthResponse(BaseModel):
 # ── Helper: Generate prediction features ──────────────────────────────
 
 def build_prediction_features(start_ts: datetime, hours: int) -> pd.DataFrame:
-    """
-    Build feature matrix for future timestamps.
-
-    Challenge: for future predictions we don't have actual lag values.
-    Solution: use historical data as the "past" to compute lags,
-              then predict forward hour by hour.
-    """
-    # Load recent historical data to compute lags
+    """Build feature matrix for future timestamps."""
     raw_path = Path(params["data"]["raw_path"])
     if not raw_path.exists():
         raise HTTPException(
@@ -174,24 +160,16 @@ def build_prediction_features(start_ts: datetime, hours: int) -> pd.DataFrame:
     hist = pd.read_csv(raw_path, parse_dates=["timestamp"])
     hist = hist.sort_values("timestamp")
 
-    # Create future timestamp rows with NaN load (to be predicted)
     future_ts = [start_ts + timedelta(hours=i) for i in range(hours)]
-    future_df  = pd.DataFrame({
-        "timestamp":       future_ts,
-        "actual_load_mw":  np.nan
+    future_df = pd.DataFrame({
+        "timestamp":      future_ts,
+        "actual_load_mw": np.nan
     })
 
-    # Append future rows to history so lags can be computed
     combined = pd.concat([hist.tail(200), future_df], ignore_index=True)
-
-    # Apply feature engineering
     featured = ModelStore.feature_engineer.transform(combined)
-
-    # Return only the future rows
     future_features = featured[featured["timestamp"].isin(future_ts)].copy()
-
-    # Fill any remaining NaN in features with forward fill
-    future_features = future_features.fillna(method="ffill").fillna(0)
+    future_features = future_features.ffill().fillna(0)
 
     return future_features
 
@@ -199,6 +177,7 @@ def build_prediction_features(start_ts: datetime, hours: int) -> pd.DataFrame:
 # ── Endpoints ──────────────────────────────────────────────────────────
 
 _start_time = datetime.now()
+
 
 @app.get("/", tags=["Health"])
 async def root():
@@ -215,23 +194,17 @@ async def health():
     """Detailed health check — model status, uptime."""
     uptime = (datetime.now() - _start_time).total_seconds()
     return HealthResponse(
-        status        = "healthy" if ModelStore.is_ready() else "degraded",
-        model_loaded  = ModelStore.is_ready(),
+        status         = "healthy" if ModelStore.is_ready() else "degraded",
+        model_loaded   = ModelStore.is_ready(),
         model_loaded_at= ModelStore.loaded_at,
-        uptime_seconds= round(uptime, 1),
-        version       = "1.0.0",
+        uptime_seconds = round(uptime, 1),
+        version        = "1.0.0",
     )
 
 
 @app.post("/predict", response_model=PredictResponse, tags=["Forecast"])
 async def predict(request: PredictRequest):
-    """
-    Forecast German electricity load for the next N hours.
-
-    Returns hourly predictions with uncertainty bounds.
-    Uncertainty = ±10% of predicted value (simplified; extend with
-    quantile regression for production-grade intervals).
-    """
+    """Forecast German electricity load for the next N hours."""
     if not ModelStore.is_ready():
         raise HTTPException(status_code=503, detail="Model not loaded")
 
@@ -250,19 +223,18 @@ async def predict(request: PredictRequest):
         )
 
     try:
-        features = build_prediction_features(start_ts, request.hours_ahead)
-        X = features[ModelStore.feature_columns].values
+        features  = build_prediction_features(start_ts, request.hours_ahead)
+        X         = features[ModelStore.feature_columns].values
         raw_preds = ModelStore.model.predict(X)
 
-        # Build response with uncertainty bounds
         predictions = []
-        for i, (ts, pred) in enumerate(zip(features["timestamp"], raw_preds)):
-            uncertainty = pred * 0.10  # ±10% simplified uncertainty
+        for ts, pred in zip(features["timestamp"], raw_preds):
+            uncertainty = pred * 0.10
             predictions.append(HourlyPrediction(
-                timestamp          = str(ts),
-                predicted_load_mw  = round(float(pred), 1),
-                lower_bound_mw     = round(float(pred - uncertainty), 1),
-                upper_bound_mw     = round(float(pred + uncertainty), 1),
+                timestamp         = str(ts),
+                predicted_load_mw = round(float(pred), 1),
+                lower_bound_mw    = round(float(pred - uncertainty), 1),
+                upper_bound_mw    = round(float(pred + uncertainty), 1),
             ))
 
         end_ts = start_ts + timedelta(hours=request.hours_ahead - 1)
@@ -273,10 +245,10 @@ async def predict(request: PredictRequest):
             hours_ahead    = request.hours_ahead,
             predictions    = predictions,
             model_info     = {
-                "model_type":   "LightGBM",
-                "loaded_at":     ModelStore.loaded_at,
-                "n_features":    len(ModelStore.feature_columns),
-                "country":       params["data"]["country_code"],
+                "model_type": "LightGBM",
+                "loaded_at":  ModelStore.loaded_at,
+                "n_features": len(ModelStore.feature_columns),
+                "country":    params["data"]["country_code"],
             },
             generated_at = datetime.now().isoformat(),
         )
@@ -288,12 +260,7 @@ async def predict(request: PredictRequest):
 
 @app.get("/predict/now", tags=["Forecast"])
 async def predict_now(hours_ahead: int = 24):
-    """
-    Shortcut endpoint — forecast from current time.
-    No request body needed.
-
-    Example: GET /predict/now?hours_ahead=12
-    """
+    """Shortcut endpoint — forecast from current time."""
     now = datetime.now().replace(minute=0, second=0, microsecond=0)
     request = PredictRequest(
         start_timestamp=now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -304,60 +271,46 @@ async def predict_now(hours_ahead: int = 24):
 
 @app.get("/metrics", tags=["Monitoring"])
 async def get_metrics():
-    """
-    Latest model performance metrics from evaluation report.
-    Used by Grafana dashboard.
-    """
+    """Latest model performance metrics from evaluation report."""
     report_path = Path("monitoring/evaluation_report.json")
     if not report_path.exists():
         raise HTTPException(status_code=404, detail="No evaluation report found. Run evaluate.py")
-
     with open(report_path) as f:
         return json.load(f)
 
 
 @app.get("/drift", tags=["Monitoring"])
 async def get_drift():
-    """
-    Latest drift detection report summary.
-    Shows whether model needs retraining.
-    """
+    """Latest drift detection report summary."""
     drift_path = Path(MONITOR_PARAMS["reports_path"]) / "drift_report_latest.json"
     if not drift_path.exists():
         raise HTTPException(status_code=404, detail="No drift report found. Run drift.py")
-
     with open(drift_path) as f:
         report = json.load(f)
-
-    # Return summary (not full report)
     return {
-        "status":          report["overall_status"],
-        "recommendation":  report["recommendation"],
-        "should_retrain":  report["should_retrain"],
-        "target_psi":      report["target_drift"]["psi"],
-        "mean_shift_pct":  report["target_drift"]["mean_shift_pct"],
-        "checked_at":      report["timestamp"],
+        "status":         report["overall_status"],
+        "recommendation": report["recommendation"],
+        "should_retrain": report["should_retrain"],
+        "target_psi":     report["target_drift"]["psi"],
+        "mean_shift_pct": report["target_drift"]["mean_shift_pct"],
+        "checked_at":     report["timestamp"],
     }
 
 
 @app.post("/feedback", tags=["Monitoring"])
 async def submit_feedback(feedback: FeedbackRequest, background_tasks: BackgroundTasks):
-    """
-    Submit actual observed load vs prediction.
-    Logged for continuous accuracy tracking.
-    Background task — doesn't slow down the response.
-    """
+    """Submit actual observed load vs prediction for monitoring."""
     def save_feedback(fb: FeedbackRequest):
         feedback_path = Path("monitoring/feedback_log.jsonl")
         feedback_path.parent.mkdir(parents=True, exist_ok=True)
         entry = {
-            "timestamp":           fb.timestamp,
-            "predicted_load_mw":   fb.predicted_load_mw,
-            "actual_load_mw":      fb.actual_load_mw,
-            "error_mw":            abs(fb.actual_load_mw - fb.predicted_load_mw),
-            "error_pct":           abs(fb.actual_load_mw - fb.predicted_load_mw) / fb.actual_load_mw * 100,
-            "logged_at":           datetime.now().isoformat(),
-            "notes":               fb.notes,
+            "timestamp":         fb.timestamp,
+            "predicted_load_mw": fb.predicted_load_mw,
+            "actual_load_mw":    fb.actual_load_mw,
+            "error_mw":          abs(fb.actual_load_mw - fb.predicted_load_mw),
+            "error_pct":         abs(fb.actual_load_mw - fb.predicted_load_mw) / fb.actual_load_mw * 100,
+            "logged_at":         datetime.now().isoformat(),
+            "notes":             fb.notes,
         }
         with open(feedback_path, "a") as f:
             f.write(json.dumps(entry) + "\n")
@@ -368,10 +321,7 @@ async def submit_feedback(feedback: FeedbackRequest, background_tasks: Backgroun
 
 @app.post("/reload-model", tags=["Admin"])
 async def reload_model():
-    """
-    Reload model from disk without restarting the API.
-    Called automatically after successful retraining.
-    """
+    """Reload model from disk without restarting the API."""
     ModelStore.load()
     if ModelStore.is_ready():
         return {"status": "model reloaded", "loaded_at": ModelStore.loaded_at}
@@ -387,6 +337,6 @@ if __name__ == "__main__":
         "src.api.app:app",
         host=API_PARAMS["host"],
         port=API_PARAMS["port"],
-        reload=True,   # Auto-reload on code changes (dev only)
+        reload=True,
         log_level="info"
     )

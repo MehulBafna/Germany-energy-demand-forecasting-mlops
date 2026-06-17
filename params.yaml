@@ -49,9 +49,9 @@ training:
 # ── MLflow ────────────────────────────────────
 mlflow:
   experiment_name: "energypulse_forecasting"
-  tracking_uri: "mlruns"              # Local folder (change to remote URI for cloud)
+  tracking_uri: "sqlite:///mlflow.db"
   registered_model_name: "energypulse"
-  promote_if_mae_improvement: 0.02    # Promote to production if MAE improves by 2%
+  promote_if_mae_improvement: 0.02
 
 # ── Monitoring ────────────────────────────────
 monitoring:

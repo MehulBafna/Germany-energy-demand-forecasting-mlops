@@ -1,0 +1,11 @@
+{
+  "evaluation_timestamp": "2026-06-17T20:09:21.805671",
+  "test_period_days": 90,
+  "n_test_samples": 2160,
+  "mae_mw": 2891.12,
+  "rmse_mw": 4403.08,
+  "mape_pct": 5.2763,
+  "p95_error": 10425.01,
+  "worst_day": "2024-10-02 10:00:00",
+  "best_day": "2024-11-15 06:00:00"
+}
