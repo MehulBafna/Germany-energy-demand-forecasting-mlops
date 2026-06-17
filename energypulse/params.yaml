@@ -1,0 +1,73 @@
+# ─────────────────────────────────────────────
+# EnergyPulse — Central Parameter Configuration
+# DVC tracks this file. Any change triggers pipeline rerun.
+# ─────────────────────────────────────────────
+
+# ── Data ──────────────────────────────────────
+data:
+  country_code: "DE"                  # Germany (DE) on ENTSO-E
+  start_date: "2020-01-01"            # Training data start
+  end_date: "2024-12-31"              # Training data end
+  forecast_horizon: 24                # Predict 24 hours ahead
+  test_split_days: 90                 # Last 90 days = test set
+  raw_path: "data/raw/energy.csv"
+  processed_path: "data/processed/features.csv"
+
+# ── Features ──────────────────────────────────
+features:
+  target: "actual_load_mw"            # What we're predicting
+  lag_hours: [1, 2, 3, 6, 12, 24, 48, 168]   # Lag features (168 = 1 week ago same hour)
+  rolling_windows: [6, 12, 24, 168]           # Rolling mean/std windows
+  use_holidays: true                  # German public holidays as binary feature
+  use_weather: false                  # Weather features (extend later)
+
+# ── Model ─────────────────────────────────────
+model:
+  name: "lightgbm"
+  params:
+    n_estimators: 500
+    learning_rate: 0.05
+    max_depth: 8
+    num_leaves: 63
+    min_child_samples: 20
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    random_state: 42
+    n_jobs: -1
+  early_stopping_rounds: 50
+  eval_metric: "mae"                  # Mean Absolute Error
+
+# ── Training ──────────────────────────────────
+training:
+  cv_folds: 5                         # Time-series cross validation folds
+  tune_hyperparams: false             # Set true to run Optuna tuning
+  optuna_trials: 50                   # Number of Optuna trials if tuning
+  model_output_path: "models/energypulse_model.pkl"
+
+# ── MLflow ────────────────────────────────────
+mlflow:
+  experiment_name: "energypulse_forecasting"
+  tracking_uri: "mlruns"              # Local folder (change to remote URI for cloud)
+  registered_model_name: "energypulse"
+  promote_if_mae_improvement: 0.02    # Promote to production if MAE improves by 2%
+
+# ── Monitoring ────────────────────────────────
+monitoring:
+  drift_window_days: 7                # Compare last 7 days vs training distribution
+  drift_threshold: 0.15               # PSI > 0.15 = significant drift → retrain
+  reports_path: "monitoring/reports/"
+  retrain_on_drift: true
+
+# ── API ───────────────────────────────────────
+api:
+  host: "0.0.0.0"
+  port: 8000
+  model_path: "models/energypulse_model.pkl"
+  max_forecast_hours: 48              # Max hours ahead API will forecast
+
+# ── Retraining Schedule ───────────────────────
+retrain:
+  schedule_cron: "0 2 * * *"         # Every day at 2 AM
+  min_new_data_days: 7                # Only retrain if 7+ new days available

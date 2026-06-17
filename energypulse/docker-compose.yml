@@ -1,0 +1,87 @@
+# ─────────────────────────────────────────────────────────────
+# EnergyPulse — Docker Compose
+# Starts all services with: docker-compose up
+# Stops all services with:  docker-compose down
+# ─────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+
+  # ── 1. FastAPI Prediction API ──────────────────────────────
+  api:
+    build:
+      context: .              # Build from Dockerfile in current directory
+      dockerfile: Dockerfile
+    container_name: energypulse_api
+    ports:
+      - "8000:8000"           # localhost:8000 → container:8000
+    environment:
+      - ENTSOE_API_KEY=${ENTSOE_API_KEY}        # Passed from your .env file
+      - MLFLOW_TRACKING_URI=http://mlflow:5000  # Points to mlflow service
+      - PYTHONPATH=/app
+    volumes:
+      # Mount local folders into container
+      # Changes to these folders reflect immediately without rebuild
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./monitoring:/app/monitoring
+      - ./mlruns:/app/mlruns
+    depends_on:
+      - mlflow                # API starts only after MLflow is running
+    restart: unless-stopped   # Auto-restart if container crashes
+    networks:
+      - energypulse_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── 2. MLflow Tracking Server ──────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0   # Official MLflow image
+    container_name: energypulse_mlflow
+    ports:
+      - "5000:5000"           # MLflow UI at localhost:5000
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri /mlflow/mlruns
+      --default-artifact-root /mlflow/artifacts
+    volumes:
+      - mlflow_data:/mlflow   # Persistent storage for experiments
+    networks:
+      - energypulse_network
+    restart: unless-stopped
+
+  # ── 3. Grafana Dashboard ───────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0           # Official Grafana image
+    container_name: energypulse_grafana
+    ports:
+      - "3000:3000"           # Grafana UI at localhost:3000
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=energypulse123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana                    # Persistent dashboards
+      - ./monitoring/grafana_dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
+    networks:
+      - energypulse_network
+    restart: unless-stopped
+
+# ── Volumes ────────────────────────────────────────────────────
+# Named volumes persist data even when containers are stopped/removed
+volumes:
+  mlflow_data:     # MLflow experiments and artifacts
+  grafana_data:    # Grafana dashboards and settings
+
+# ── Networks ───────────────────────────────────────────────────
+# All services on same network can reach each other by service name
+# e.g. API can reach MLflow at http://mlflow:5000
+networks:
+  energypulse_network:
+    driver: bridge

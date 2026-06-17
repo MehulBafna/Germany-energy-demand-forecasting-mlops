@@ -1,0 +1,92 @@
+# ─────────────────────────────────────────────────────────────
+# dvc.yaml — EnergyPulse Pipeline Definition
+#
+# Defines 4 stages: fetch → preprocess → train → evaluate
+#
+# DVC tracks dependencies between stages:
+#   - If raw data changes  → preprocess + train + evaluate rerun
+#   - If params change     → train + evaluate rerun
+#   - If nothing changes   → nothing reruns (cached)
+#
+# Run full pipeline: dvc repro
+# Run single stage:  dvc repro train
+# Show pipeline:     dvc dag
+# ─────────────────────────────────────────────────────────────
+
+stages:
+
+  # ── Stage 1: Fetch Data ──────────────────────────────────────
+  fetch:
+    cmd: python -m src.data.fetch
+    deps:
+      - src/data/fetch.py       # If this file changes → rerun
+      - params.yaml             # If data params change → rerun
+    params:
+      - data.country_code       # Track specific params
+      - data.start_date
+      - data.end_date
+    outs:
+      - data/raw/energy.csv:    # Output file DVC tracks
+          cache: true           # Store in DVC cache
+          desc: "Raw hourly German energy load from ENTSO-E"
+
+  # ── Stage 2: Preprocess ──────────────────────────────────────
+  preprocess:
+    cmd: python -m src.data.preprocess
+    deps:
+      - src/data/preprocess.py
+      - data/raw/energy.csv     # Depends on fetch output
+      - params.yaml
+    params:
+      - features.lag_hours
+      - features.rolling_windows
+      - data.test_split_days
+    outs:
+      - data/processed/features.csv:
+          cache: true
+          desc: "Engineered features for model training"
+      - models/feature_engineer.pkl:
+          cache: true
+          desc: "Fitted feature engineering pipeline"
+
+  # ── Stage 3: Train ───────────────────────────────────────────
+  train:
+    cmd: python -m src.models.train
+    deps:
+      - src/models/train.py
+      - data/processed/features.csv    # Depends on preprocess output
+      - params.yaml
+    params:
+      - model.params              # Track all model hyperparameters
+      - model.early_stopping_rounds
+      - training.cv_folds
+      - data.test_split_days
+    outs:
+      - models/energypulse_model.pkl:
+          cache: true
+          desc: "Trained LightGBM model"
+      - models/feature_columns.json:
+          cache: true
+          desc: "Ordered list of feature columns for API"
+      - models/reference_stats.json:
+          cache: true
+          desc: "Training distribution stats for drift detection"
+    metrics:
+      - models/last_run_summary.json:  # DVC tracks these as metrics
+          cache: false                  # Don't cache — read directly
+
+  # ── Stage 4: Evaluate ────────────────────────────────────────
+  evaluate:
+    cmd: python -m src.models.evaluate
+    deps:
+      - src/models/evaluate.py
+      - models/energypulse_model.pkl   # Depends on train output
+      - data/processed/features.csv
+    outs:
+      - monitoring/plots/:
+          cache: true
+          desc: "Evaluation plots (predictions, errors, by hour/month)"
+    metrics:
+      - monitoring/evaluation_report.json:
+          cache: false
+          desc: "Full evaluation metrics report"

@@ -1,0 +1,32 @@
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Data (tracked by DVC, not Git)
+data/raw/
+data/processed/
+
+# Models (tracked by DVC, not Git)
+models/*.pkl
+models/*.json
+
+# MLflow
+mlruns/
+
+# Monitoring outputs
+monitoring/reports/
+monitoring/plots/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
