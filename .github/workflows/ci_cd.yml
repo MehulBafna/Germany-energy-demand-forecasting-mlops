@@ -146,6 +146,7 @@ jobs:
     needs: test
     if: |
       (github.event_name == 'schedule') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.retrain == 'true')
 
     steps:
@@ -213,7 +214,7 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, train]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
 
