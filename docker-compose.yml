@@ -4,8 +4,6 @@
 # Stops all services with:  docker-compose down
 # ─────────────────────────────────────────────────────────────
 
-version: "3.9"
-
 services:
 
   # ── 1. FastAPI Prediction API ──────────────────────────────

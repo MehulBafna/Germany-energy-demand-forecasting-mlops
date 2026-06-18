@@ -231,8 +231,8 @@ jobs:
           script: |
             cd /opt/energypulse
             docker pull ${{ env.DOCKER_REGISTRY }}/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/${{ env.DOCKER_IMAGE }}:latest
-            docker-compose pull api
-            docker-compose up -d --no-deps api
+            docker compose pull api
+            docker compose up -d --no-deps api
             sleep 15
             curl -f http://localhost:8000/health || (echo "Deploy failed!" && exit 1)
             echo "Deploy successful! Version: ${{ github.sha }}"
