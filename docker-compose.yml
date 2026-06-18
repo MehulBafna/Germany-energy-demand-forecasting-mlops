@@ -10,9 +10,7 @@ services:
 
   # ── 1. FastAPI Prediction API ──────────────────────────────
   api:
-    build:
-      context: .              # Build from Dockerfile in current directory
-      dockerfile: Dockerfile
+    image: ghcr.io/mehulbafna/energypulse:latest
     container_name: energypulse_api
     ports:
       - "8000:8000"           # localhost:8000 → container:8000
