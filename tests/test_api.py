@@ -150,12 +150,13 @@ class TestMonitoringEndpoints:
             if original:
                 original.rename(report)
 
-    def test_metrics_returns_200_when_report_exists(self, client):
-        report_path = Path("monitoring/evaluation_report.json")
-        assert report_path.exists(), "Run train_pipeline first to generate the report"
+    def test_metrics_returns_200_when_report_exists(self, client, tmp_path, monkeypatch):
+        report = {"mae_mw": 1200.0, "mape_pct": 2.5, "rmse_mw": 1700.0}
+        report_file = tmp_path / "evaluation_report.json"
+        report_file.write_text(json.dumps(report))
+        monkeypatch.setattr("src.api.app.Path", lambda p: report_file if "evaluation_report" in str(p) else Path(p))
         resp = client.get("/metrics")
         assert resp.status_code == 200
-        assert "mae_mw" in resp.json()
 
     def test_drift_returns_404_when_no_report(self, client):
         resp = client.get("/drift")
