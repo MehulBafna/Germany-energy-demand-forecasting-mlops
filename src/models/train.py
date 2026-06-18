@@ -12,6 +12,7 @@ Champion/Challenger pattern:
   - Prevents accidentally deploying a worse model
 """
 
+import os
 import pandas as pd
 import numpy as np
 import lightgbm as lgb
@@ -140,7 +141,7 @@ def train(df: pd.DataFrame = None):
     logger.info(f"Features: {len(feature_cols)}")
 
     # ── MLflow run ──
-    mlflow.set_tracking_uri(MLFLOW_PARAMS["tracking_uri"])
+    mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", MLFLOW_PARAMS["tracking_uri"]))
     mlflow.set_experiment(MLFLOW_PARAMS["experiment_name"])
 
     with mlflow.start_run(run_name=f"lgbm_{datetime.now().strftime('%Y%m%d_%H%M')}") as run:

@@ -12,6 +12,7 @@ Generates:
 All plots + report are logged to MLflow automatically.
 """
 
+import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -280,7 +281,7 @@ def evaluate(run_id: str = None) -> dict:
 
     # Log to MLflow if run_id provided
     if run_id:
-        mlflow.set_tracking_uri(MLFLOW_PARAMS["tracking_uri"])
+        mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", MLFLOW_PARAMS["tracking_uri"]))
         with mlflow.start_run(run_id=run_id):
             for path in plot_paths:
                 mlflow.log_artifact(str(path), "evaluation_plots")
