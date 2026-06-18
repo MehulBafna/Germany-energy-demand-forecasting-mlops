@@ -19,10 +19,14 @@ models/*.json
 
 # MLflow
 mlruns/
+mlflow.db
 
 # Monitoring outputs
 monitoring/reports/
 monitoring/plots/
+monitoring/*.json
+monitoring/*.csv
+monitoring/*.jsonl
 
 # IDE
 .vscode/

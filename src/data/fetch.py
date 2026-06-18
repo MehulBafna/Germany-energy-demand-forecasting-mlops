@@ -70,6 +70,18 @@ def fetch_entso_data(
         df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.tz_localize(None)
         df = df.sort_values("timestamp").reset_index(drop=True)
 
+        # ENTSO-E returns 15-min resolution — resample to hourly mean
+        if len(df) > 1:
+            freq = (df["timestamp"].iloc[1] - df["timestamp"].iloc[0]).total_seconds() / 3600
+            if freq < 1.0:
+                df = (
+                    df.set_index("timestamp")
+                    .resample("h")
+                    .mean()
+                    .reset_index()
+                )
+                logger.info(f"Resampled 15-min data to hourly: {len(df):,} records")
+
         logger.info(f"Fetched {len(df):,} hourly records")
         return df
 
