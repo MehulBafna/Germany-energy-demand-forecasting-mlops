@@ -200,7 +200,7 @@ def train(df: pd.DataFrame = None):
         model_path = Path(TRAIN_PARAMS["model_output_path"])
         model_path.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(model, model_path)
-        mlflow.lightgbm.log_model(model, name="model")
+        mlflow.lightgbm.log_model(model, artifact_path="model")
 
         # Save feature column order — API needs this to align inputs
         feat_path = Path("models/feature_columns.json")
