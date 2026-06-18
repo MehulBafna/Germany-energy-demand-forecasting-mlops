@@ -1,0 +1,42 @@
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# Data & Models (mounted at runtime, not baked into image)
+data/
+models/
+mlruns/
+mlflow.db
+
+# Monitoring outputs
+monitoring/reports/
+monitoring/plots/
+monitoring/*.json
+monitoring/*.csv
+monitoring/*.jsonl
+
+# Dev & test
+tests/
+.pytest_cache/
+coverage.xml
+.coverage
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Env files
+.env
+*.env
