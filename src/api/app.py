@@ -28,6 +28,7 @@ from typing import List, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from prometheus_fastapi_instrumentator import Instrumentator
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -59,6 +60,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Prometheus metrics for Grafana — exposed at /prometheus-metrics
+# (separate path because /metrics is already used for model performance JSON)
+Instrumentator().instrument(app).expose(app, endpoint="/prometheus-metrics")
 
 
 # ── Model Loading ──────────────────────────────────────────────────────

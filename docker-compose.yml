@@ -53,7 +53,20 @@ services:
       - energypulse_network
     restart: unless-stopped
 
-  # ── 3. Grafana Dashboard ───────────────────────────────────
+  # ── 3. Prometheus — scrapes API metrics ────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: energypulse_prometheus
+    ports:
+      - "9090:9090"           # Prometheus UI at localhost:9090
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - energypulse_network
+    restart: unless-stopped
+
+  # ── 4. Grafana Dashboard ───────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.0           # Official Grafana image
     container_name: energypulse_grafana
@@ -64,8 +77,11 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=energypulse123
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
-      - grafana_data:/var/lib/grafana                    # Persistent dashboards
-      - ./monitoring/grafana_dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
+      - grafana_data:/var/lib/grafana                                          # Persistent dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    depends_on:
+      - prometheus
     networks:
       - energypulse_network
     restart: unless-stopped
@@ -73,8 +89,9 @@ services:
 # ── Volumes ────────────────────────────────────────────────────
 # Named volumes persist data even when containers are stopped/removed
 volumes:
-  mlflow_data:     # MLflow experiments and artifacts
-  grafana_data:    # Grafana dashboards and settings
+  mlflow_data:       # MLflow experiments and artifacts
+  grafana_data:      # Grafana dashboards and settings
+  prometheus_data:   # Prometheus time-series data
 
 # ── Networks ───────────────────────────────────────────────────
 # All services on same network can reach each other by service name

@@ -26,6 +26,7 @@ pydantic==2.7.4               # Request/response validation
 
 # ── Monitoring ─────────────────────────────────────────────────
 evidently==0.4.30             # Data drift + model performance monitoring
+prometheus-fastapi-instrumentator==7.0.0   # Expose Prometheus metrics for Grafana
 
 # ── Scheduling ─────────────────────────────────────────────────
 prefect==2.19.7               # Pipeline scheduling + orchestration
