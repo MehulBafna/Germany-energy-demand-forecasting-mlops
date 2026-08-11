@@ -103,7 +103,7 @@ jobs:
     name: Build Docker Image
     runs-on: ubuntu-latest
     needs: train
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout code
@@ -215,7 +215,7 @@ jobs:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     environment: production
 
     steps:
