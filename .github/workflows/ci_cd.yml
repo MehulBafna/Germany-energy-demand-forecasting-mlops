@@ -35,7 +35,6 @@ on:
     - cron: "0 3 * * 0"         # Weekly Sunday 3 AM UTC
 
 # ── Permissions ───────────────────────────────────────────────
-# packages: write is required to push images to GHCR
 permissions:
   contents: read
   packages: write
@@ -107,7 +106,7 @@ jobs:
       always() &&
       needs.test.result == 'success' &&
       (needs.train.result == 'success' || needs.train.result == 'skipped') &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
 
     steps:
       - name: Checkout code
@@ -222,7 +221,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch')
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
     environment: production
 
     steps:
